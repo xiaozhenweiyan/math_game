@@ -13,9 +13,6 @@ const CONFIG = {
     FPS: 60,
     PLAYER_WIDTH: 32,
     PLAYER_HEIGHT: 48,
-    PLAYER_COLOR: '#ffd700',
-    PLAYER_COLOR_DARK: '#b8860b',
-    PLAYER_COLOR_LIGHT: '#ffec8b',
     PLAYER_START_X: 400,
     PLAYER_START_Y: 452,
     GRAVITY: 0.6,
@@ -24,7 +21,11 @@ const CONFIG = {
     MAX_FALL_SPEED: 15,
     PEBBLE_SPACING: 60,
     PEBBLE_MIN_SIZE: 2,
-    PEBBLE_MAX_SIZE: 6
+    PEBBLE_MAX_SIZE: 6,
+    HOTBAR_SIZE: 10,
+    NUMBER_ENTITY_SPAWN_DIST: 1000,
+    NUMBER_ENTITY_SPACING: 200,
+    NUMBER_ENTITY_SIZE: 28
 };
 
 // ==================== 游戏状态 ====================
@@ -35,6 +36,12 @@ const GameState = {
     GAMEOVER: 'gameover'
 };
 
+// ==================== 伪随机函数 ====================
+function pseudoRandom(seed) {
+    let x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+}
+
 // ==================== 玩家工厂函数 ====================
 function createPlayer(x, y) {
     return {
@@ -44,9 +51,37 @@ function createPlayer(x, y) {
         height: CONFIG.PLAYER_HEIGHT,
         velocityX: 0,
         velocityY: 0,
-        isOnGround: true
+        isOnGround: true,
+        value: 1  // 玩家当前数字值，初始为1
     };
 }
+
+// ==================== 游戏对象 ====================
+const game = {
+    canvas: null,
+    ctx: null,
+    state: GameState.START,
+    lastTime: 0,
+    deltaTime: 0,
+    animationFrameId: null,
+    player: null,
+    camera: { x: 0, y: 0 },
+    // 物品栏：10个槽位，null表示空，否则存数字值
+    inventory: new Array(CONFIG.HOTBAR_SIZE).fill(null),
+    selectedSlot: 0,
+    // 世界中的数字实体
+    numberEntities: [],
+    input: {
+        keys: {},
+        mouse: { x: 0, y: 0 }
+    }
+};
+
+// ==================== DOM 元素 ====================
+const startBtn = document.getElementById('start-btn');
+const startScreen = document.getElementById('start-screen');
+const gameScene = document.getElementById('game-scene');
+const hotbarSlots = document.querySelectorAll('.hotbar-slot');
 
 // ==================== 玩家更新函数 ====================
 function updatePlayer(deltaTime) {
@@ -95,40 +130,116 @@ function updatePlayer(deltaTime) {
 // ==================== 相机更新函数 ====================
 function updateCamera() {
     if (!game.player) return;
-
     // 相机水平跟随玩家，玩家始终在屏幕中央
     game.camera.x = game.player.x + game.player.width / 2 - CONFIG.CANVAS_WIDTH / 2;
-
-    // 相机垂直不跟随，跳跃时玩家上下移动可见
     game.camera.y = 0;
 }
 
-// ==================== 伪随机函数（基于种子，相同x产生相同结果） ====================
-function pseudoRandom(seed) {
-    let x = Math.sin(seed) * 10000;
-    return x - Math.floor(x);
+// ==================== 数字实体生成 ====================
+function spawnNumberEntities() {
+    if (!game.player) return;
+
+    const camX = game.camera.x;
+    const spacing = CONFIG.NUMBER_ENTITY_SPACING;
+
+    // 在玩家周围一定范围内生成数字实体
+    const startIndex = Math.floor((camX - CONFIG.NUMBER_ENTITY_SPAWN_DIST) / spacing);
+    const endIndex = Math.ceil((camX + CONFIG.CANVAS_WIDTH + CONFIG.NUMBER_ENTITY_SPAWN_DIST) / spacing);
+
+    for (let i = startIndex; i <= endIndex; i++) {
+        if (i === 0) continue; // 起点附近不生成
+
+        // 检查这个位置是否已经生成过
+        const exists = game.numberEntities.some(e => e.slotIndex === i);
+        if (exists) continue;
+
+        // 伪随机决定是否生成（约50%概率）
+        const randVal = pseudoRandom(i * 7777.7);
+        if (randVal < 0.5) continue;
+
+        // 生成 1-9 的随机数字
+        const value = Math.floor(pseudoRandom(i * 9999.9) * 9) + 1;
+        const offsetX = (pseudoRandom(i * 5555.5) - 0.5) * spacing * 0.5;
+        const yOffset = Math.floor(pseudoRandom(i * 3333.3) * 100); // 浮空高度
+
+        game.numberEntities.push({
+            x: i * spacing + offsetX,
+            y: CONFIG.FLOOR_Y - CONFIG.NUMBER_ENTITY_SIZE - yOffset,
+            width: CONFIG.NUMBER_ENTITY_SIZE,
+            height: CONFIG.NUMBER_ENTITY_SIZE,
+            value: value,
+            slotIndex: i,
+            collected: false,
+            bobOffset: pseudoRandom(i * 1111.1) * Math.PI * 2  // 浮动动画相位
+        });
+    }
+
+    // 清理远离的实体（超出范围太远）
+    game.numberEntities = game.numberEntities.filter(e => {
+        const dist = Math.abs(e.x - game.player.x);
+        return dist < CONFIG.NUMBER_ENTITY_SPAWN_DIST * 3;
+    });
 }
 
-// ==================== 游戏对象 ====================
-const game = {
-    canvas: null,
-    ctx: null,
-    state: GameState.START,
-    lastTime: 0,
-    deltaTime: 0,
-    animationFrameId: null,
-    player: null,
-    camera: { x: 0, y: 0 },
-    input: {
-        keys: {},
-        mouse: { x: 0, y: 0 }
-    }
-};
+// ==================== 数字实体碰撞检测（捡起） ====================
+function updateNumberEntities() {
+    if (!game.player) return;
 
-// ==================== DOM 元素 ====================
-const startBtn = document.getElementById('start-btn');
-const startScreen = document.getElementById('start-screen');
-const gameScene = document.getElementById('game-scene');
+    const p = game.player;
+
+    for (let i = 0; i < game.numberEntities.length; i++) {
+        const e = game.numberEntities[i];
+        if (e.collected) continue;
+
+        // AABB 碰撞检测
+        if (p.x < e.x + e.width &&
+            p.x + p.width > e.x &&
+            p.y < e.y + e.height &&
+            p.y + p.height > e.y) {
+
+            // 捡起：放入物品栏第一个空位
+            const emptySlot = game.inventory.indexOf(null);
+            if (emptySlot !== -1) {
+                game.inventory[emptySlot] = e.value;
+                e.collected = true;
+                updateHotbarUI();
+            }
+        }
+    }
+
+    // 移除已收集的实体
+    game.numberEntities = game.numberEntities.filter(e => !e.collected);
+}
+
+// ==================== 使用物品（F键） ====================
+function useSelectedItem() {
+    const item = game.inventory[game.selectedSlot];
+    if (item === null) return;
+
+    // 玩家数字 + 物品数字
+    game.player.value += item;
+    // 清空该槽位
+    game.inventory[game.selectedSlot] = null;
+    updateHotbarUI();
+}
+
+// ==================== 物品栏 UI 更新 ====================
+function updateHotbarUI() {
+    hotbarSlots.forEach((slot, index) => {
+        const itemSpan = slot.querySelector('.slot-item');
+        if (game.inventory[index] === null) {
+            itemSpan.textContent = '';
+        } else {
+            itemSpan.textContent = game.inventory[index];
+        }
+        // 高亮当前选中
+        if (index === game.selectedSlot) {
+            slot.classList.add('selected');
+        } else {
+            slot.classList.remove('selected');
+        }
+    });
+}
 
 // ==================== 初始化函数 ====================
 function initGame() {
@@ -148,6 +259,13 @@ function initGame() {
     game.lastTime = performance.now();
 
     game.player = createPlayer(CONFIG.PLAYER_START_X, CONFIG.PLAYER_START_Y);
+    game.camera.x = 0;
+    game.camera.y = 0;
+    game.inventory = new Array(CONFIG.HOTBAR_SIZE).fill(null);
+    game.selectedSlot = 0;
+    game.numberEntities = [];
+
+    updateHotbarUI();
 
     console.log('游戏初始化完成');
 
@@ -171,6 +289,8 @@ function gameLoop(currentTime = performance.now()) {
 function update(deltaTime) {
     updatePlayer(deltaTime);
     updateCamera();
+    spawnNumberEntities();
+    updateNumberEntities();
 }
 
 // ==================== 渲染函数 ====================
@@ -179,6 +299,7 @@ function render() {
     renderBackground();
     renderFloor();
     renderPebbles();
+    renderNumberEntities();
     renderPlayer();
 }
 
@@ -197,33 +318,14 @@ function renderBackground() {
 function renderFloor() {
     const floorY = CONFIG.FLOOR_Y;
 
-    // 地板是无限延伸的，所以总是画满整个屏幕宽度
-    // 地板阴影（底部）
     game.ctx.fillStyle = CONFIG.FLOOR_SHADOW_COLOR;
-    game.ctx.fillRect(
-        0,
-        floorY + CONFIG.FLOOR_HEIGHT,
-        CONFIG.CANVAS_WIDTH,
-        CONFIG.FLOOR_SHADOW_HEIGHT
-    );
+    game.ctx.fillRect(0, floorY + CONFIG.FLOOR_HEIGHT, CONFIG.CANVAS_WIDTH, CONFIG.FLOOR_SHADOW_HEIGHT);
 
-    // 地板主体
     game.ctx.fillStyle = CONFIG.FLOOR_COLOR;
-    game.ctx.fillRect(
-        0,
-        floorY,
-        CONFIG.CANVAS_WIDTH,
-        CONFIG.FLOOR_HEIGHT
-    );
+    game.ctx.fillRect(0, floorY, CONFIG.CANVAS_WIDTH, CONFIG.FLOOR_HEIGHT);
 
-    // 地板高光（顶部）
     game.ctx.fillStyle = CONFIG.FLOOR_HIGHLIGHT_COLOR;
-    game.ctx.fillRect(
-        0,
-        floorY - CONFIG.FLOOR_HIGHLIGHT_HEIGHT,
-        CONFIG.CANVAS_WIDTH,
-        CONFIG.FLOOR_HIGHLIGHT_HEIGHT
-    );
+    game.ctx.fillRect(0, floorY - CONFIG.FLOOR_HIGHLIGHT_HEIGHT, CONFIG.CANVAS_WIDTH, CONFIG.FLOOR_HIGHLIGHT_HEIGHT);
 }
 
 // ==================== 渲染石子 ====================
@@ -232,12 +334,10 @@ function renderPebbles() {
     const floorY = CONFIG.FLOOR_Y;
     const spacing = CONFIG.PEBBLE_SPACING;
 
-    // 计算当前可见范围内有多少颗石子
     const startIndex = Math.floor(camX / spacing) - 1;
     const endIndex = Math.ceil((camX + CONFIG.CANVAS_WIDTH) / spacing) + 1;
 
     for (let i = startIndex; i <= endIndex; i++) {
-        // 基于索引的伪随机，保证同一位置总是相同的石子
         const seed = i * 12345.6789;
         const offsetX = pseudoRandom(seed) * spacing * 0.6;
         const sizeX = CONFIG.PEBBLE_MIN_SIZE + pseudoRandom(seed + 1) * (CONFIG.PEBBLE_MAX_SIZE - CONFIG.PEBBLE_MIN_SIZE);
@@ -247,23 +347,52 @@ function renderPebbles() {
         const worldX = i * spacing + offsetX;
         const screenX = worldX - camX;
 
-        // 石子主体（深灰色）
         game.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-        game.ctx.fillRect(
-            screenX,
-            floorY + CONFIG.FLOOR_HEIGHT + yOffset,
-            sizeX,
-            sizeY
-        );
+        game.ctx.fillRect(screenX, floorY + CONFIG.FLOOR_HEIGHT + yOffset, sizeX, sizeY);
 
-        // 石子顶部高光
         game.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        game.ctx.fillRect(
-            screenX,
-            floorY + CONFIG.FLOOR_HEIGHT + yOffset,
-            sizeX,
-            1
-        );
+        game.ctx.fillRect(screenX, floorY + CONFIG.FLOOR_HEIGHT + yOffset, sizeX, 1);
+    }
+}
+
+// ==================== 渲染数字实体 ====================
+function renderNumberEntities() {
+    const ctx = game.ctx;
+    const camX = game.camera.x;
+    const time = performance.now() / 500;
+
+    for (let i = 0; i < game.numberEntities.length; i++) {
+        const e = game.numberEntities[i];
+        const screenX = e.x - camX;
+
+        // 超出屏幕的不渲染
+        if (screenX < -50 || screenX > CONFIG.CANVAS_WIDTH + 50) continue;
+
+        // 浮动动画
+        const bobY = Math.sin(time + e.bobOffset) * 4;
+        const drawY = e.y + bobY;
+
+        // 发光底圈
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.15)';
+        ctx.beginPath();
+        ctx.arc(screenX + e.width / 2, drawY + e.height / 2, e.width * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 数字方块背景
+        ctx.fillStyle = '#2d2d44';
+        ctx.fillRect(screenX, drawY, e.width, e.height);
+
+        // 白色边框
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(screenX, drawY, e.width, e.height);
+
+        // 绘制数字
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 20px "Courier New", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(e.value.toString(), screenX + e.width / 2, drawY + e.height / 2);
     }
 }
 
@@ -273,57 +402,77 @@ function renderPlayer() {
 
     const p = game.player;
     const ctx = game.ctx;
-    const px = 4;
 
     // 世界坐标转换为屏幕坐标
-    // 水平：玩家世界坐标 - 相机位置（玩家始终在屏幕水平中央）
-    // 垂直：直接使用玩家 y 坐标（跳跃时上下移动可见）
     const screenX = p.x - game.camera.x;
     const screenY = p.y;
 
-    // 玩家底部阴影（在地上的投影）
+    // 玩家底部阴影
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fillRect(screenX - px, screenY + p.height, p.width + px * 2, px);
+    ctx.fillRect(screenX - 4, screenY + p.height, p.width + 8, 4);
 
-    // 纯白色数字"1"，使用像素艺术风格绘制
+    // 绘制玩家数字（支持任意数字，包括1000+）
+    // 根据数字位数调整字体大小
+    const valueStr = p.value.toString();
+    const numDigits = valueStr.length;
+    let fontSize = 40;
+    if (numDigits === 2) fontSize = 36;
+    else if (numDigits === 3) fontSize = 30;
+    else if (numDigits >= 4) fontSize = 24;
+
     ctx.fillStyle = '#ffffff';
-
-    const pattern = [
-        [0,0,1,1,1,0,0,0],
-        [0,1,1,1,1,0,0,0],
-        [0,0,0,1,1,0,0,0],
-        [0,0,0,1,1,0,0,0],
-        [0,0,0,1,1,0,0,0],
-        [0,0,0,1,1,0,0,0],
-        [0,0,0,1,1,0,0,0],
-        [0,0,0,1,1,0,0,0],
-        [0,0,0,1,1,0,0,0],
-        [0,0,0,1,1,0,0,0],
-        [0,1,1,1,1,1,1,0],
-        [1,1,1,1,1,1,1,1],
-    ];
-
-    for (let row = 0; row < pattern.length; row++) {
-        for (let col = 0; col < pattern[row].length; col++) {
-            if (pattern[row][col] === 1) {
-                ctx.fillRect(
-                    screenX + col * px,
-                    screenY + row * px,
-                    px,
-                    px
-                );
-            }
-        }
-    }
+    ctx.font = `bold ${fontSize}px "Courier New", monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // 数字阴影增加立体感
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
+    ctx.shadowBlur = 0;
+    ctx.fillText(valueStr, screenX + p.width / 2, screenY + p.height / 2);
+    // 重置阴影
+    ctx.shadowColor = 'transparent';
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.shadowBlur = 0;
 }
 
-// ==================== 输入系统（预留） ====================
+// ==================== 输入系统 ====================
 function handleKeyDown(e) {
     game.input.keys[e.key] = true;
+
+    // 数字键 1-0 选择物品栏槽位
+    if (e.key >= '1' && e.key <= '9') {
+        game.selectedSlot = parseInt(e.key) - 1;
+        updateHotbarUI();
+    } else if (e.key === '0') {
+        game.selectedSlot = 9;
+        updateHotbarUI();
+    }
+
+    // F 键使用物品
+    if (e.key === 'f' || e.key === 'F') {
+        useSelectedItem();
+    }
 }
 
 function handleKeyUp(e) {
     game.input.keys[e.key] = false;
+}
+
+function handleWheel(e) {
+    // 滚轮切换物品栏
+    if (game.state !== GameState.PLAYING) return;
+
+    if (e.deltaY > 0) {
+        // 向下滚：下一个
+        game.selectedSlot = (game.selectedSlot + 1) % CONFIG.HOTBAR_SIZE;
+    } else {
+        // 向上滚：上一个
+        game.selectedSlot = (game.selectedSlot - 1 + CONFIG.HOTBAR_SIZE) % CONFIG.HOTBAR_SIZE;
+    }
+    updateHotbarUI();
+    e.preventDefault();
 }
 
 function handleMouseMove(e) {
@@ -342,3 +491,4 @@ startBtn.addEventListener('click', () => {
 
 document.addEventListener('keydown', handleKeyDown);
 document.addEventListener('keyup', handleKeyUp);
+document.addEventListener('wheel', handleWheel, { passive: false });
