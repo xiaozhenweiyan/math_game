@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, base_v1]
   workflow_dispatch:
 
 # 设置权限：读取代码 + 写入 Pages
