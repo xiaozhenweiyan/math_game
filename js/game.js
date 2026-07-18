@@ -21,7 +21,10 @@ const CONFIG = {
     GRAVITY: 0.6,
     JUMP_FORCE: -14,
     MOVE_SPEED: 5,
-    MAX_FALL_SPEED: 15
+    MAX_FALL_SPEED: 15,
+    PEBBLE_SPACING: 60,
+    PEBBLE_MIN_SIZE: 2,
+    PEBBLE_MAX_SIZE: 6
 };
 
 // ==================== 游戏状态 ====================
@@ -79,14 +82,6 @@ function updatePlayer(deltaTime) {
     p.x += p.velocityX;
     p.y += p.velocityY;
 
-    // 左右边界限制
-    if (p.x < 0) {
-        p.x = 0;
-    }
-    if (p.x + p.width > CONFIG.CANVAS_WIDTH) {
-        p.x = CONFIG.CANVAS_WIDTH - p.width;
-    }
-
     // 地板碰撞检测
     if (p.y + p.height >= CONFIG.FLOOR_Y) {
         p.y = CONFIG.FLOOR_Y - p.height;
@@ -95,6 +90,23 @@ function updatePlayer(deltaTime) {
     } else {
         p.isOnGround = false;
     }
+}
+
+// ==================== 相机更新函数 ====================
+function updateCamera() {
+    if (!game.player) return;
+
+    // 相机水平跟随玩家，玩家始终在屏幕中央
+    game.camera.x = game.player.x + game.player.width / 2 - CONFIG.CANVAS_WIDTH / 2;
+
+    // 相机垂直不跟随，跳跃时玩家上下移动可见
+    game.camera.y = 0;
+}
+
+// ==================== 伪随机函数（基于种子，相同x产生相同结果） ====================
+function pseudoRandom(seed) {
+    let x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
 }
 
 // ==================== 游戏对象 ====================
@@ -106,6 +118,7 @@ const game = {
     deltaTime: 0,
     animationFrameId: null,
     player: null,
+    camera: { x: 0, y: 0 },
     input: {
         keys: {},
         mouse: { x: 0, y: 0 }
@@ -157,6 +170,7 @@ function gameLoop(currentTime = performance.now()) {
 // ==================== 更新逻辑 ====================
 function update(deltaTime) {
     updatePlayer(deltaTime);
+    updateCamera();
 }
 
 // ==================== 渲染函数 ====================
@@ -164,6 +178,7 @@ function render() {
     clearCanvas();
     renderBackground();
     renderFloor();
+    renderPebbles();
     renderPlayer();
 }
 
@@ -182,6 +197,7 @@ function renderBackground() {
 function renderFloor() {
     const floorY = CONFIG.FLOOR_Y;
 
+    // 地板是无限延伸的，所以总是画满整个屏幕宽度
     // 地板阴影（底部）
     game.ctx.fillStyle = CONFIG.FLOOR_SHADOW_COLOR;
     game.ctx.fillRect(
@@ -210,52 +226,95 @@ function renderFloor() {
     );
 }
 
+// ==================== 渲染石子 ====================
+function renderPebbles() {
+    const camX = game.camera.x;
+    const floorY = CONFIG.FLOOR_Y;
+    const spacing = CONFIG.PEBBLE_SPACING;
+
+    // 计算当前可见范围内有多少颗石子
+    const startIndex = Math.floor(camX / spacing) - 1;
+    const endIndex = Math.ceil((camX + CONFIG.CANVAS_WIDTH) / spacing) + 1;
+
+    for (let i = startIndex; i <= endIndex; i++) {
+        // 基于索引的伪随机，保证同一位置总是相同的石子
+        const seed = i * 12345.6789;
+        const offsetX = pseudoRandom(seed) * spacing * 0.6;
+        const sizeX = CONFIG.PEBBLE_MIN_SIZE + pseudoRandom(seed + 1) * (CONFIG.PEBBLE_MAX_SIZE - CONFIG.PEBBLE_MIN_SIZE);
+        const sizeY = CONFIG.PEBBLE_MIN_SIZE + pseudoRandom(seed + 2) * (CONFIG.PEBBLE_MAX_SIZE - CONFIG.PEBBLE_MIN_SIZE);
+        const yOffset = pseudoRandom(seed + 3) * 2;
+
+        const worldX = i * spacing + offsetX;
+        const screenX = worldX - camX;
+
+        // 石子主体（深灰色）
+        game.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        game.ctx.fillRect(
+            screenX,
+            floorY + CONFIG.FLOOR_HEIGHT + yOffset,
+            sizeX,
+            sizeY
+        );
+
+        // 石子顶部高光
+        game.ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        game.ctx.fillRect(
+            screenX,
+            floorY + CONFIG.FLOOR_HEIGHT + yOffset,
+            sizeX,
+            1
+        );
+    }
+}
+
 // ==================== 渲染玩家 ====================
 function renderPlayer() {
     if (!game.player) return;
 
     const p = game.player;
     const ctx = game.ctx;
-    const px = 4; // 像素单位
+    const px = 4;
+
+    // 世界坐标转换为屏幕坐标
+    // 水平：玩家世界坐标 - 相机位置（玩家始终在屏幕水平中央）
+    // 垂直：直接使用玩家 y 坐标（跳跃时上下移动可见）
+    const screenX = p.x - game.camera.x;
+    const screenY = p.y;
+
+    // 玩家底部阴影（在地上的投影）
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(screenX - px, screenY + p.height, p.width + px * 2, px);
 
     // 纯白色数字"1"，使用像素艺术风格绘制
-    // 网格：8列 x 12行（每格 4px = px）
     ctx.fillStyle = '#ffffff';
 
-    // "1"的像素图案（8x12 网格）
-    // 1 = 填充白色像素, 0 = 透明
     const pattern = [
-        [0,0,1,1,1,0,0,0],  // 顶部斜线装饰（像数字1的衬线）
-        [0,1,1,1,1,0,0,0],  // 斜线过渡
-        [0,0,0,1,1,0,0,0],  // 收窄到竖线
-        [0,0,0,1,1,0,0,0],  // 竖线
-        [0,0,0,1,1,0,0,0],  // 竖线
-        [0,0,0,1,1,0,0,0],  // 竖线
-        [0,0,0,1,1,0,0,0],  // 竖线
-        [0,0,0,1,1,0,0,0],  // 竖线
-        [0,0,0,1,1,0,0,0],  // 竖线
-        [0,0,0,1,1,0,0,0],  // 竖线
-        [0,1,1,1,1,1,1,0],  // 底座横线
-        [1,1,1,1,1,1,1,1],  // 底座加宽
+        [0,0,1,1,1,0,0,0],
+        [0,1,1,1,1,0,0,0],
+        [0,0,0,1,1,0,0,0],
+        [0,0,0,1,1,0,0,0],
+        [0,0,0,1,1,0,0,0],
+        [0,0,0,1,1,0,0,0],
+        [0,0,0,1,1,0,0,0],
+        [0,0,0,1,1,0,0,0],
+        [0,0,0,1,1,0,0,0],
+        [0,0,0,1,1,0,0,0],
+        [0,1,1,1,1,1,1,0],
+        [1,1,1,1,1,1,1,1],
     ];
 
-    // 绘制像素图案
     for (let row = 0; row < pattern.length; row++) {
         for (let col = 0; col < pattern[row].length; col++) {
             if (pattern[row][col] === 1) {
                 ctx.fillRect(
-                    p.x + col * px,
-                    p.y + row * px,
+                    screenX + col * px,
+                    screenY + row * px,
                     px,
                     px
                 );
             }
         }
     }
-
-    // 玩家底部阴影（在地上的投影，让角色有立体感）
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fillRect(p.x - px, p.y + p.height, p.width + px * 2, px);
 }
 
 // ==================== 输入系统（预留） ====================
