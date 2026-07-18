@@ -173,3 +173,14 @@ body {
     font-family: var(--font);
     text-shadow: 2px 2px 0 var(--shadow);
 }
+
+.slot-count {
+    position: absolute;
+    bottom: 2px;
+    right: 4px;
+    font-size: 11px;
+    color: var(--accent);
+    font-weight: bold;
+    font-family: var(--font);
+    text-shadow: 1px 1px 0 var(--shadow);
+}

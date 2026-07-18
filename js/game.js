@@ -25,7 +25,8 @@ const CONFIG = {
     HOTBAR_SIZE: 10,
     NUMBER_ENTITY_SPAWN_DIST: 1000,
     NUMBER_ENTITY_SPACING: 200,
-    NUMBER_ENTITY_SIZE: 28
+    NUMBER_ENTITY_SIZE: 28,
+    MAX_STACK_SIZE: 100
 };
 
 // ==================== 游戏状态 ====================
@@ -66,11 +67,13 @@ const game = {
     animationFrameId: null,
     player: null,
     camera: { x: 0, y: 0 },
-    // 物品栏：10个槽位，null表示空，否则存数字值
+    // 物品栏：10个槽位，null表示空，否则 { value: 数字, count: 数量 }
     inventory: new Array(CONFIG.HOTBAR_SIZE).fill(null),
     selectedSlot: 0,
     // 世界中的数字实体
     numberEntities: [],
+    // 已被捡过的槽位（永久记录，防止重复生成）
+    collectedSlots: new Set(),
     input: {
         keys: {},
         mouse: { x: 0, y: 0 }
@@ -142,14 +145,17 @@ function spawnNumberEntities() {
     const camX = game.camera.x;
     const spacing = CONFIG.NUMBER_ENTITY_SPACING;
 
-    // 在玩家周围一定范围内生成数字实体
+    // 在玩家周围一定范围内生成数字实体（左右都生成，支持无穷远
     const startIndex = Math.floor((camX - CONFIG.NUMBER_ENTITY_SPAWN_DIST) / spacing);
     const endIndex = Math.ceil((camX + CONFIG.CANVAS_WIDTH + CONFIG.NUMBER_ENTITY_SPAWN_DIST) / spacing);
 
     for (let i = startIndex; i <= endIndex; i++) {
-        if (i === 0) continue; // 起点附近不生成
+        if (i === 0) continue;
 
-        // 检查这个位置是否已经生成过
+        // 检查这个位置是否已经被捡过（永久不再生成）
+        if (game.collectedSlots.has(i)) continue;
+
+        // 检查这个位置是否已经生成过实体
         const exists = game.numberEntities.some(e => e.slotIndex === i);
         if (exists) continue;
 
@@ -160,7 +166,7 @@ function spawnNumberEntities() {
         // 生成 1-9 的随机数字
         const value = Math.floor(pseudoRandom(i * 9999.9) * 9) + 1;
         const offsetX = (pseudoRandom(i * 5555.5) - 0.5) * spacing * 0.5;
-        const yOffset = Math.floor(pseudoRandom(i * 3333.3) * 100); // 浮空高度
+        const yOffset = Math.floor(pseudoRandom(i * 3333.3) * 100);
 
         game.numberEntities.push({
             x: i * spacing + offsetX,
@@ -170,11 +176,12 @@ function spawnNumberEntities() {
             value: value,
             slotIndex: i,
             collected: false,
-            bobOffset: pseudoRandom(i * 1111.1) * Math.PI * 2  // 浮动动画相位
+            bobOffset: pseudoRandom(i * 1111.1) * Math.PI * 2
         });
     }
 
-    // 清理远离的实体（超出范围太远）
+    // 清理远离的实体（超出范围太远的实体从数组移除，但不影响 collectedSlots 记录
+    // 已捡过的位置永久保存在 collectedSlots 里，永远不会再生
     game.numberEntities = game.numberEntities.filter(e => {
         const dist = Math.abs(e.x - game.player.x);
         return dist < CONFIG.NUMBER_ENTITY_SPAWN_DIST * 3;
@@ -197,10 +204,11 @@ function updateNumberEntities() {
             p.y < e.y + e.height &&
             p.y + p.height > e.y) {
 
-            // 捡起：放入物品栏第一个空位
-            const emptySlot = game.inventory.indexOf(null);
-            if (emptySlot !== -1) {
-                game.inventory[emptySlot] = e.value;
+            // 尝试捡起：先找同类且未满的堆叠，再找空格
+            const pickedUp = tryPickupItem(e.value);
+            if (pickedUp) {
+                // 记录这个位置已被捡过（永久不再生成）
+                game.collectedSlots.add(e.slotIndex);
                 e.collected = true;
                 updateHotbarUI();
             }
@@ -211,15 +219,43 @@ function updateNumberEntities() {
     game.numberEntities = game.numberEntities.filter(e => !e.collected);
 }
 
+// ==================== 尝试捡起物品（堆叠逻辑） ====================
+function tryPickupItem(value) {
+    // 第一步：找同类且未满的槽位堆叠
+    for (let i = 0; i < game.inventory.length; i++) {
+        const slot = game.inventory[i];
+        if (slot !== null && slot.value === value && slot.count < CONFIG.MAX_STACK_SIZE) {
+            slot.count++;
+            return true;
+        }
+    }
+
+    // 第二步：找空槽位
+    for (let i = 0; i < game.inventory.length; i++) {
+        if (game.inventory[i] === null) {
+            game.inventory[i] = { value: value, count: 1 };
+            return true;
+        }
+    }
+
+    // 背包满了
+    return false;
+}
+
 // ==================== 使用物品（F键） ====================
 function useSelectedItem() {
     const item = game.inventory[game.selectedSlot];
     if (item === null) return;
 
     // 玩家数字 + 物品数字
-    game.player.value += item;
-    // 清空该槽位
-    game.inventory[game.selectedSlot] = null;
+    game.player.value += item.value;
+
+    // 堆叠数量减1
+    item.count--;
+    if (item.count <= 0) {
+        game.inventory[game.selectedSlot] = null;
+    }
+
     updateHotbarUI();
 }
 
@@ -227,12 +263,17 @@ function useSelectedItem() {
 function updateHotbarUI() {
     hotbarSlots.forEach((slot, index) => {
         const itemSpan = slot.querySelector('.slot-item');
-        if (game.inventory[index] === null) {
+        const countSpan = slot.querySelector('.slot-count');
+        const item = game.inventory[index];
+
+        if (item === null) {
             itemSpan.textContent = '';
+            countSpan.textContent = '';
         } else {
-            itemSpan.textContent = game.inventory[index];
+            itemSpan.textContent = item.value;
+            countSpan.textContent = item.count > 1 ? item.count : '';
         }
-        // 高亮当前选中
+
         if (index === game.selectedSlot) {
             slot.classList.add('selected');
         } else {
@@ -264,6 +305,7 @@ function initGame() {
     game.inventory = new Array(CONFIG.HOTBAR_SIZE).fill(null);
     game.selectedSlot = 0;
     game.numberEntities = [];
+    game.collectedSlots = new Set();
 
     updateHotbarUI();
 
