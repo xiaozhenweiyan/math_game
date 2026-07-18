@@ -26,7 +26,8 @@ const CONFIG = {
     NUMBER_ENTITY_SPAWN_DIST: 1000,
     NUMBER_ENTITY_SPACING: 200,
     NUMBER_ENTITY_SIZE: 28,
-    MAX_STACK_SIZE: 100
+    MAX_STACK_SIZE: 100,
+    PICKUP_COOLDOWN: 0.3  // 捡起冷却（秒），防止一帧捡太多
 };
 
 // ==================== 游戏状态 ====================
@@ -74,6 +75,8 @@ const game = {
     numberEntities: [],
     // 已被捡过的槽位（永久记录，防止重复生成）
     collectedSlots: new Set(),
+    // 捡起冷却计时器
+    pickupCooldown: 0,
     input: {
         keys: {},
         mouse: { x: 0, y: 0 }
@@ -189,14 +192,22 @@ function spawnNumberEntities() {
 }
 
 // ==================== 数字实体碰撞检测（捡起） ====================
-function updateNumberEntities() {
+function updateNumberEntities(deltaTime) {
     if (!game.player) return;
+
+    // 冷却倒计时
+    if (game.pickupCooldown > 0) {
+        game.pickupCooldown -= deltaTime;
+    }
 
     const p = game.player;
 
     for (let i = 0; i < game.numberEntities.length; i++) {
         const e = game.numberEntities[i];
         if (e.collected) continue;
+
+        // 冷却中不捡起
+        if (game.pickupCooldown > 0) break;
 
         // AABB 碰撞检测
         if (p.x < e.x + e.width &&
@@ -210,6 +221,8 @@ function updateNumberEntities() {
                 // 记录这个位置已被捡过（永久不再生成）
                 game.collectedSlots.add(e.slotIndex);
                 e.collected = true;
+                // 设置冷却，防止一帧捡太多
+                game.pickupCooldown = CONFIG.PICKUP_COOLDOWN;
                 updateHotbarUI();
             }
         }
@@ -306,6 +319,7 @@ function initGame() {
     game.selectedSlot = 0;
     game.numberEntities = [];
     game.collectedSlots = new Set();
+    game.pickupCooldown = 0;
 
     updateHotbarUI();
 
@@ -332,7 +346,7 @@ function update(deltaTime) {
     updatePlayer(deltaTime);
     updateCamera();
     spawnNumberEntities();
-    updateNumberEntities();
+    updateNumberEntities(deltaTime);
 }
 
 // ==================== 渲染函数 ====================
