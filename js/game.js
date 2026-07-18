@@ -216,43 +216,46 @@ function renderPlayer() {
 
     const p = game.player;
     const ctx = game.ctx;
-    const px = 4;
+    const px = 4; // 像素单位
 
-    // 角色主体阴影（底部）
-    ctx.fillStyle = CONFIG.PLAYER_COLOR_DARK;
-    ctx.fillRect(p.x + px, p.y + p.height - px, p.width - px, px);
-
-    // 角色主体阴影（右侧）
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.fillRect(p.x + p.width - px, p.y + px, px, p.height - px);
-
-    // 角色主体
-    ctx.fillStyle = CONFIG.PLAYER_COLOR;
-    ctx.fillRect(p.x, p.y, p.width - px, p.height - px);
-
-    // 角色高光（顶部）
-    ctx.fillStyle = CONFIG.PLAYER_COLOR_LIGHT;
-    ctx.fillRect(p.x, p.y, p.width - px, px);
-
-    // 角色高光（左侧）
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
-    ctx.fillRect(p.x, p.y + px, px, p.height - px * 2);
-
-    // 数字"1"像素图案
+    // 纯白色数字"1"，使用像素艺术风格绘制
+    // 网格：8列 x 12行（每格 4px = px）
     ctx.fillStyle = '#ffffff';
 
-    // 数字"1"的顶部点
-    ctx.fillRect(p.x + p.width / 2 - px / 2, p.y + px * 2, px, px);
+    // "1"的像素图案（8x12 网格）
+    // 1 = 填充白色像素, 0 = 透明
+    const pattern = [
+        [0,0,1,1,1,0,0,0],  // 顶部斜线装饰（像数字1的衬线）
+        [0,1,1,1,1,0,0,0],  // 斜线过渡
+        [0,0,0,1,1,0,0,0],  // 收窄到竖线
+        [0,0,0,1,1,0,0,0],  // 竖线
+        [0,0,0,1,1,0,0,0],  // 竖线
+        [0,0,0,1,1,0,0,0],  // 竖线
+        [0,0,0,1,1,0,0,0],  // 竖线
+        [0,0,0,1,1,0,0,0],  // 竖线
+        [0,0,0,1,1,0,0,0],  // 竖线
+        [0,0,0,1,1,0,0,0],  // 竖线
+        [0,1,1,1,1,1,1,0],  // 底座横线
+        [1,1,1,1,1,1,1,1],  // 底座加宽
+    ];
 
-    // 数字"1"的竖线
-    ctx.fillRect(p.x + p.width / 2 - px / 2, p.y + px * 4, px, p.height - px * 8);
+    // 绘制像素图案
+    for (let row = 0; row < pattern.length; row++) {
+        for (let col = 0; col < pattern[row].length; col++) {
+            if (pattern[row][col] === 1) {
+                ctx.fillRect(
+                    p.x + col * px,
+                    p.y + row * px,
+                    px,
+                    px
+                );
+            }
+        }
+    }
 
-    // 数字"1"的底部横线
-    ctx.fillRect(p.x + px * 2, p.y + p.height - px * 4, p.width - px * 5, px);
-
-    // 数字"1"的阴影
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-    ctx.fillRect(p.x + p.width / 2 + px / 2, p.y + px * 4, px, p.height - px * 8);
+    // 玩家底部阴影（在地上的投影，让角色有立体感）
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(p.x - px, p.y + p.height, p.width + px * 2, px);
 }
 
 // ==================== 输入系统（预留） ====================
