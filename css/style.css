@@ -1,0 +1,108 @@
+:root {
+    --bg-deep: #1a1a2e;
+    --bg-panel: #2d2d44;
+    --bg-cell: #1a1a2e;
+    --border: #ffffff;
+    --accent: #ffd700;
+    --shadow: rgba(0, 0, 0, 0.4);
+    --font: "Courier New", Courier, monospace;
+}
+
+body {
+    background-color: var(--bg-deep);
+    font-family: var(--font);
+    font-weight: bold;
+    letter-spacing: 1px;
+    color: #fff;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.pixel-panel {
+    background-color: var(--bg-panel);
+    border: 3px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 4px 4px 0 var(--shadow);
+    padding: 30px;
+    margin: 20px;
+}
+
+.pixel-btn {
+    background-color: var(--bg-panel);
+    border: 3px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 4px 4px 0 var(--shadow);
+    cursor: pointer;
+    transition: transform 0.05s, box-shadow 0.05s;
+    font-family: inherit;
+    color: #fff;
+    padding: 12px 24px;
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+.pixel-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.pixel-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 var(--shadow);
+}
+
+#start-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 80px;
+}
+
+.game-title {
+    font-size: 48px;
+    color: var(--accent);
+    text-shadow: 3px 3px 0 var(--shadow);
+    letter-spacing: 4px;
+    margin: 0 0 10px 0;
+}
+
+.game-subtitle {
+    font-size: 18px;
+    color: #fff;
+    margin: 0 0 40px 0;
+    letter-spacing: 2px;
+    opacity: 0.9;
+}
+
+#start-btn {
+    margin-top: 20px;
+    font-size: 24px;
+    padding: 16px 48px;
+}
+
+#game-scene {
+    display: none;
+    padding: 0;
+    overflow: hidden;
+}
+
+#game-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#game-canvas {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    background-color: #1a1a2e;
+}
